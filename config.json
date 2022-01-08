@@ -1,0 +1,33 @@
+{
+    "interval": 30,
+    "jsonrpc": "http://127.0.0.1:6800/jsonrpc",
+    "secret": "",
+    "folder": "C:/mikan/",
+    "list": [
+        {
+            "title": "失格纹的最强贤者",
+            "rss": "https://mikanani.me/RSS/Bangumi?bangumiId=2617&subgroupid=552",
+            "key": ""
+        },
+        {
+            "title": "终末的后宫",
+            "rss": "https://mikanani.me/RSS/Bangumi?bangumiId=2559&subgroupid=552",
+            "key": ""
+        },
+        {
+            "title": "王子的本命是恶役千金",
+            "rss": "https://mikanani.me/RSS/Bangumi?bangumiId=2620&subgroupid=203",
+            "key": "简体"
+        },
+        {
+            "title": "东京24区",
+            "rss": "https://mikanani.me/RSS/Bangumi?bangumiId=2618&subgroupid=552",
+            "key": ""
+        },
+        {
+            "title": "彩绿",
+            "rss": "https://mikanani.me/RSS/Bangumi?bangumiId=2650&subgroupid=531",
+            "key": "简体"
+        }
+    ]
+}

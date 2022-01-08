@@ -1,0 +1,12 @@
+{
+    "include": ["src"],
+    "compilerOptions": {
+        "module": "esnext",
+        "target": "esnext",
+        "rootDir": "./src",
+        "outDir": "./build/",
+        "strict": true,
+        "moduleResolution": "node",
+        "skipLibCheck": true,
+    }
+}
