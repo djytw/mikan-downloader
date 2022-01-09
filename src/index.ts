@@ -55,7 +55,7 @@ async function run(mikan: MikanMonitor) {
         return mikan.getUpdates();
     }).then(data => {
         if (data.length == 0) {
-            console.debug("No updates.");
+            logger.debug("No updates.");
         }
         return Promise.all(data.map(async item => {
             logger.info("Mikan Update | " + item.time + " | " + item.title);
