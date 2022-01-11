@@ -8,6 +8,7 @@ export default [
         },
         external: [
             'fs',
+            'process',
             'node-fetch',
             'fast-xml-parser'
         ]

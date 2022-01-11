@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as process from 'process';
 import fetch from 'node-fetch';
 import { XMLParser } from 'fast-xml-parser';
 
@@ -24,6 +25,24 @@ class MikanMonitor {
         "method": "aria2.addTorrent",
         "params": []
     };
+    static toBase64 = (typeof window !== 'undefined' && window.btoa) ? this.toBase64_browser : this.toBase64_node;
+    static toBase64_browser(buffer) {
+        let bin = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            bin += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(bin);
+    }
+    static toBase64_node(buffer) {
+        return Buffer.from(buffer).toString("base64");
+    }
+    static deepCopy(obj) {
+        return JSON.parse(JSON.stringify(obj));
+    }
+    static getMikanInfo(rss) {
+        return new MikanInfo(rss.link.split("/").pop(), rss.torrent.pubDate, rss.title, rss.enclosure["@_url"]);
+    }
     config;
     secret;
     logger;
@@ -34,84 +53,94 @@ class MikanMonitor {
         this.logger = logger;
         this.ignoreHash = ignoreHash;
     }
-    formRPC(obj) {
+    async formRPC(obj) {
         obj.params.unshift(this.secret);
         obj.id = 'mikan';
-        return JSON.stringify(obj);
-    }
-    async connectionTest() {
-        const request = JSON.parse(JSON.stringify(MikanMonitor.jsonrpc_getVersion));
+        const body = JSON.stringify(obj);
         return fetch(this.config.jsonrpc, {
             method: "POST",
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
             },
-            body: this.formRPC(request)
-        })
-            .then(response => response.json())
-            .then(data => {
+            body: body
+        });
+    }
+    async connectionTest() {
+        try {
+            const request = MikanMonitor.deepCopy(MikanMonitor.jsonrpc_getVersion);
+            const response = await this.formRPC(request);
+            const data = await response.json();
             if (data.error) {
                 throw new Error("RPC Connection failed. reason: " + JSON.stringify(data.error));
             }
             return data.result?.enabledFeatures instanceof Array && data.result.enabledFeatures.includes('BitTorrent');
-        })
-            .catch(err => {
-            this.logger.error(err.message);
+        }
+        catch (err) {
+            if (err && err.message) {
+                this.logger.error(err.message);
+            }
+            else {
+                this.logger.error(err);
+            }
             return false;
-        });
+        }
     }
     async download(hash, torrent) {
-        const request = JSON.parse(JSON.stringify(MikanMonitor.jsonrpc_addTorrent));
-        return fetch(torrent)
-            .then(response => response.arrayBuffer())
-            .then(data => Buffer.from(data).toString("base64"))
-            .then(data => {
+        try {
+            const response = await fetch(torrent);
+            const data = MikanMonitor.toBase64(await response.arrayBuffer());
+            const request = MikanMonitor.deepCopy(MikanMonitor.jsonrpc_addTorrent);
             request.params = [data, [], { dir: this.config.folder + "/" + hash + "/" }];
-            return fetch(this.config.jsonrpc, {
-                method: "POST",
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                body: this.formRPC(request)
-            });
-        })
-            .then(response => response.json())
-            .catch(err => {
-            this.logger.error("Download error: " + err.message);
-        });
+            const response2 = await this.formRPC(request);
+            return await response2.json();
+        }
+        catch (err) {
+            if (err && err.message) {
+                this.logger.error(err.message);
+            }
+            else {
+                this.logger.error(err);
+            }
+            return undefined;
+        }
     }
     async getUpdates() {
-        const tasks = this.config.list.map(req => fetch(req.rss)
-            .then(response => response.text())
-            .then(data => MikanMonitor.parser.parse(data))
-            .then(data => data.rss?.channel?.item)
-            .then(items => {
-            if (items === null || items === undefined) {
-                this.logger.warn("No data: " + req.title);
-                return [];
-            }
-            if (items instanceof Array) {
-                return items
-                    .filter(item => item.title.includes(req.key))
-                    .map(item => new MikanInfo(item.link.split("/").pop(), item.torrent.pubDate, item.title, item.enclosure["@_url"]));
-            }
-            if (typeof items.link === "string" || items.link instanceof String) {
-                if (!items.title.includes(req.key)) {
+        const tasks = this.config.list.map(async (req) => {
+            try {
+                const response = await fetch(req.rss);
+                const data = MikanMonitor.parser.parse(await response.text());
+                const items = data.rss?.channel?.item;
+                if (items === null || items === undefined) {
+                    this.logger.warn("No data: " + req.title);
                     return [];
                 }
-                else {
-                    return [new MikanInfo(items.link.split("/").pop(), items.torrent.pubDate, items.title, items.enclosure["@_url"])];
+                if (items instanceof Array) {
+                    return items
+                        .filter(item => item.title.includes(req.key))
+                        .map(MikanMonitor.getMikanInfo);
                 }
+                if (typeof items.link === "string" || items.link instanceof String) {
+                    if (!items.title.includes(req.key)) {
+                        return [];
+                    }
+                    else {
+                        return [MikanMonitor.getMikanInfo(items)];
+                    }
+                }
+                this.logger.error("Invalid response: " + JSON.stringify(items));
+                return [];
             }
-            this.logger.error("Invalid response: " + JSON.stringify(items));
-            return [];
-        })
-            .catch(err => {
-            this.logger.error("RSS error: " + err.message);
-            return [];
-        }));
+            catch (err) {
+                if (err && err.message) {
+                    this.logger.error("RSS error: " + err.message);
+                }
+                else {
+                    this.logger.error("RSS error: " + err);
+                }
+                return [];
+            }
+        });
         return Promise.all(tasks)
             .then(results => results.flat().filter(i => !this.ignoreHash(i.hash)));
     }
@@ -153,7 +182,9 @@ function updateFinishedHash() {
 let finishedHash = [];
 updateFinishedHash();
 const mikan = new MikanMonitor(JSON.parse(fs.readFileSync("./config.json").toString()), logger, hash => finishedHash.includes(hash));
-run(mikan);
+run(mikan).catch(() => {
+    process.exit(0);
+});
 async function run(mikan) {
     return mikan.connectionTest().then(result => {
         if (!result) {

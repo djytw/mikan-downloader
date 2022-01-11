@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as process from "process";
 import {MikanMonitor} from "./Mikan";
 
 const logger = {
@@ -43,7 +44,9 @@ const mikan = new MikanMonitor(
     logger,
     hash => finishedHash.includes(hash)
 );
-run(mikan);
+run(mikan).catch(() => {
+    process.exit(0);
+});
 
 async function run(mikan: MikanMonitor) {
 
